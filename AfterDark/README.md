@@ -2,6 +2,10 @@
 
 A Tampermonkey userscript that darkens every site, similar to Dark Reader / Dark Night, using the CSS `invert()` + `hue-rotate()` technique (images/video/canvas are re-inverted so they keep natural colors).
 
+| Light mode (off) | Dark mode (Dracula theme) |
+| --- | --- |
+| ![Light mode, widget panel open, dark mode off](ss_lightmode.png) | ![Dark mode active with the Dracula theme preset](ss_darkmode.png) |
+
 ## Install
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) in your browser.
