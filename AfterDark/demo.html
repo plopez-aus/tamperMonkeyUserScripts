@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>AfterDark demo page</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 20px; line-height: 1.6; }
+  h1 { }
+  .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 24px 0; }
+  img { max-width: 100%; border-radius: 6px; }
+  .filler { height: 1400px; background: linear-gradient(#f5f5f5, #e8e8e8); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #888; margin: 24px 0; }
+  footer { opacity: .6; font-size: 13px; }
+</style>
+</head>
+<body>
+  <h1>AfterDark demo page</h1>
+  <p>This page is intentionally tall (scroll down) so you can confirm the floating toggle widget
+     stays pinned to the bottom-right corner of the <em>viewport</em> — not the bottom of the whole
+     document — even while the dark filter is active on <code>&lt;html&gt;</code>.</p>
+
+  <div class="card">
+    <h2>Sample card</h2>
+    <p>Some ordinary text, a link to <a href="#">nowhere</a>, and a sample image below to show
+       that images stay in their natural colors under the invert filter.</p>
+    <img src="https://picsum.photos/seed/afterdark/600/300" alt="sample" />
+  </div>
+
+  <div class="filler">~1400px of filler content — scroll past this</div>
+
+  <div class="card">
+    <h2>Bottom of the page</h2>
+    <p>If the widget were incorrectly anchored to the document instead of the viewport (the bug
+       that was fixed), it would only be visible down here. It should instead be visible the
+       whole time, fixed in the bottom-right of your window.</p>
+  </div>
+
+  <footer>End of demo content.</footer>
+
+<script>
+  // Minimal GM_* polyfill so the unmodified Tampermonkey script can run in a
+  // plain browser tab for local testing (Tampermonkey provides the real
+  // versions of these when installed as a userscript).
+  (function () {
+    window.GM_setValue = function (key, value) { localStorage.setItem('afterdark-demo:' + key, value); };
+    window.GM_getValue = function (key, def) {
+      const v = localStorage.getItem('afterdark-demo:' + key);
+      return v === null ? def : v;
+    };
+    window.GM_addValueChangeListener = function () { /* no-op for single-tab demo */ };
+    window.GM_registerMenuCommand = function () { /* no browser menu in plain demo */ };
+  })();
+</script>
+<script>
+  // Cache-busting query string: the plain <script src> version got
+  // stuck on a stale cached copy across reloads during development.
+  document.write('<script src="afterdark.user.js?t=' + Date.now() + '"><\/script>');
+</script>
+</body>
+</html>
