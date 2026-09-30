@@ -65,177 +65,8 @@
   const SITE_THEME_KEYS = ['default', ...THEME_KEYS];
 
   // ---------------------------------------------------------------------
-  // Color-matrix engine.
-  //
-  // "Colourise media" needs to cancel a theme's tint on media elements
-  // specifically (see the CSS below), and now that intensity/grayscale/
-  // sepia are user-adjustable rather than baked into fixed presets, the
-  // old approach (precompute one fixed inverse string per theme) can't
-  // work anymore -- the actual filter chain varies at runtime.
-  //
-  // Every filter function we use (invert, hue-rotate, brightness,
-  // contrast, saturate, sepia, grayscale) is an affine transform in RGB
-  // space: output = A*input + b, where A is a 3x3 matrix and b a 3x1
-  // offset (A is the linear part; only invert/contrast have a non-zero
-  // b). Representing each this way lets us COMPOSE an arbitrary chain
-  // into a single {A, b} and invert that once, instead of reversing
-  // functions one at a time (which breaks down for sepia/grayscale,
-  // since CSS has no "negative sepia"). The single combined inverse is
-  // applied to media via one generated SVG feColorMatrix.
-  function identityTransform() {
-    return { A: [[1, 0, 0], [0, 1, 0], [0, 0, 1]], b: [0, 0, 0] };
-  }
-
-  function invertTransform(amount) {
-    const k = 1 - 2 * amount;
-    return { A: [[k, 0, 0], [0, k, 0], [0, 0, k]], b: [amount, amount, amount] };
-  }
-
-  function brightnessTransform(amount) {
-    return { A: [[amount, 0, 0], [0, amount, 0], [0, 0, amount]], b: [0, 0, 0] };
-  }
-
-  function contrastTransform(amount) {
-    const off = 0.5 * (1 - amount);
-    return { A: [[amount, 0, 0], [0, amount, 0], [0, 0, amount]], b: [off, off, off] };
-  }
-
-  function saturateTransform(amount) {
-    return {
-      A: [
-        [0.213 + 0.787 * amount, 0.715 - 0.715 * amount, 0.072 - 0.072 * amount],
-        [0.213 - 0.213 * amount, 0.715 + 0.285 * amount, 0.072 - 0.072 * amount],
-        [0.213 - 0.213 * amount, 0.715 - 0.715 * amount, 0.072 + 0.928 * amount],
-      ],
-      b: [0, 0, 0],
-    };
-  }
-
-  function hueRotateTransform(deg) {
-    const rad = (deg * Math.PI) / 180;
-    const c = Math.cos(rad);
-    const s = Math.sin(rad);
-    return {
-      A: [
-        [0.213 + c * 0.787 - s * 0.213, 0.715 - c * 0.715 - s * 0.715, 0.072 - c * 0.072 + s * 0.928],
-        [0.213 - c * 0.213 + s * 0.143, 0.715 + c * 0.285 + s * 0.140, 0.072 - c * 0.072 - s * 0.283],
-        [0.213 - c * 0.213 - s * 0.787, 0.715 - c * 0.715 + s * 0.715, 0.072 + c * 0.928 + s * 0.072],
-      ],
-      b: [0, 0, 0],
-    };
-  }
-
-  // sepia()/grayscale() are both defined by the CSS spec as a lerp from
-  // identity to a fixed "full amount" matrix.
-  const SEPIA_FULL = [[0.393, 0.769, 0.189], [0.349, 0.686, 0.168], [0.272, 0.534, 0.131]];
-  const GRAYSCALE_FULL = [[0.2126, 0.7152, 0.0722], [0.2126, 0.7152, 0.0722], [0.2126, 0.7152, 0.0722]];
-
-  function blendTransform(full, amount) {
-    const I = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-    return { A: I.map((row, i) => row.map((v, j) => v + amount * (full[i][j] - v))), b: [0, 0, 0] };
-  }
-
-  function sepiaTransform(amount) {
-    return blendTransform(SEPIA_FULL, amount);
-  }
-
-  function grayscaleTransform(amount) {
-    return blendTransform(GRAYSCALE_FULL, amount);
-  }
-
-  function matMul(m1, m2) {
-    return m1.map((row) => m2[0].map((_, j) => row.reduce((sum, v, k) => sum + v * m2[k][j], 0)));
-  }
-
-  function matVec(m, v) {
-    return m.map((row) => row.reduce((sum, x, i) => sum + x * v[i], 0));
-  }
-
-  function addVec(a, b) {
-    return a.map((x, i) => x + b[i]);
-  }
-
-  // Apply `first`, then `second`.
-  function composeTransform(first, second) {
-    return { A: matMul(second.A, first.A), b: addVec(matVec(second.A, first.b), second.b) };
-  }
-
-  function invert3x3(m) {
-    const [[a, b, c], [d, e, f], [g, h, i]] = m;
-    const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
-    if (!det) return null;
-    const inv = 1 / det;
-    return [
-      [(e * i - f * h) * inv, (c * h - b * i) * inv, (b * f - c * e) * inv],
-      [(f * g - d * i) * inv, (a * i - c * g) * inv, (c * d - a * f) * inv],
-      [(d * h - e * g) * inv, (b * g - a * h) * inv, (a * e - b * d) * inv],
-    ];
-  }
-
-  function invertTransformChain(t) {
-    const Ainv = invert3x3(t.A) || [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-    return { A: Ainv, b: matVec(Ainv, t.b).map((x) => -x) };
-  }
-
-  function tokenizeFilter(filterStr) {
-    const tokens = [];
-    const re = /([\w-]+)\(([^)]+)\)/g;
-    let m;
-    while ((m = re.exec(filterStr))) tokens.push({ fn: m[1], arg: m[2].trim() });
-    return tokens;
-  }
-
-  function parseFilterAmount(arg) {
-    // Slider-driven filters are generated as e.g. "60%"; theme presets
-    // use the fractional form "0.6". parseFloat("60%") === 60, not 0.6,
-    // so without this the percent form would blow the amount wildly out
-    // of the [0,1] range the matrix math (and CSS itself) expects it in.
-    return arg.endsWith('%') ? parseFloat(arg) / 100 : parseFloat(arg);
-  }
-
-  function tokenTransform(token) {
-    const amount = parseFilterAmount(token.arg);
-    switch (token.fn) {
-      case 'invert': return invertTransform(amount);
-      case 'hue-rotate': return hueRotateTransform(amount);
-      case 'brightness': return brightnessTransform(amount);
-      case 'contrast': return contrastTransform(amount);
-      case 'saturate': return saturateTransform(amount);
-      case 'sepia': return sepiaTransform(amount);
-      case 'grayscale': return grayscaleTransform(amount);
-      default: return identityTransform();
-    }
-  }
-
-  function chainTransform(filterStr) {
-    return tokenizeFilter(filterStr).reduce(
-      (acc, tok) => composeTransform(acc, tokenTransform(tok)),
-      identityTransform()
-    );
-  }
-
-  const MEDIA_INVERSE_ID = 'afterdark-media-inverse';
-
-  function injectMediaInverseFilterDef() {
-    const wrapper = document.createElement('div');
-    // color-interpolation-filters="sRGB" matches the color space CSS
-    // filter functions operate in -- the SVG default is linearRGB, which
-    // would apply this matrix in the wrong space and give wrong colors.
-    wrapper.innerHTML =
-      `<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">` +
-      `<filter id="${MEDIA_INVERSE_ID}" color-interpolation-filters="sRGB">` +
-      `<feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/>` +
-      `</filter></svg>`;
-    document.documentElement.appendChild(wrapper.firstElementChild);
-  }
-
-  function updateMediaInverseFilter(transform) {
-    const matrixEl = document.querySelector(`#${MEDIA_INVERSE_ID} feColorMatrix`);
-    if (!matrixEl) return;
-    const row = (i) => `${transform.A[i][0]} ${transform.A[i][1]} ${transform.A[i][2]} 0 ${transform.b[i]}`;
-    matrixEl.setAttribute('values', `${row(0)}  ${row(1)}  ${row(2)}  0 0 0 1 0`);
-  }
-
+  // Settings & Storage
+  // ---------------------------------------------------------------------
   function getDefaultMode() {
     const v = GM_getValue(KEY_DEFAULT, 'auto');
     return MODES.includes(v) ? v : 'auto';
@@ -401,18 +232,17 @@ html.afterdark-enabled canvas,
 html.afterdark-enabled embed,
 html.afterdark-enabled object,
 html.afterdark-enabled svg image {
-  /* The exact inverse of whatever's currently active (theme + intensity
-     + grayscale/sepia sliders, or just the base flip if "colourise
-     media" is on) -- applyTheme() keeps this SVG filter's matrix in
-     sync on every change; see updateMediaInverseFilter(). */
-  filter: url(#${MEDIA_INVERSE_ID}) !important;
+  /* Use CSS shorthand filter via custom property: fully hardware-accelerated
+     across all browsers and immune to Chrome's GPU compositor bug where
+     SVG reference filters (filter: url(#...)) are silently dropped on <video>
+     elements, leaving them as photo negatives. */
+  filter: var(--afterdark-media-filter, invert(1) hue-rotate(180deg)) !important;
 }
 /* Only counter-invert the widget when it couldn't be promoted to the
    top layer (no Popover API support) and is therefore still visually
-   affected by the ancestor filter above. Reusing the same filter also
-   fixes its residual tinting on non-standard themes in that fallback. */
+   affected by the ancestor filter above. */
 html.afterdark-enabled .afterdark-widget-host.afterdark-no-popover {
-  filter: url(#${MEDIA_INVERSE_ID}) !important;
+  filter: var(--afterdark-media-filter, invert(1) hue-rotate(180deg)) !important;
 }
 `;
 
@@ -426,12 +256,10 @@ html.afterdark-enabled .afterdark-widget-host.afterdark-no-popover {
   // Inject as early as possible; documentElement always exists at document-start.
   if (document.documentElement) {
     injectStyle();
-    injectMediaInverseFilterDef();
   } else {
     new MutationObserver((_, obs) => {
       if (document.documentElement) {
         injectStyle();
-        injectMediaInverseFilterDef();
         obs.disconnect();
       }
     }).observe(document, { childList: true, subtree: true });
@@ -474,6 +302,7 @@ html.afterdark-enabled .afterdark-widget-host.afterdark-no-popover {
 
     if (!enabled) {
       document.documentElement.style.removeProperty('--afterdark-filter');
+      document.documentElement.style.removeProperty('--afterdark-media-filter');
       updateWidget();
       return;
     }
@@ -486,19 +315,38 @@ html.afterdark-enabled .afterdark-widget-host.afterdark-no-popover {
     const finalFilter = buildThemeFilter(themeKey, intensityFraction, grayscaleAmt, sepiaAmt);
     document.documentElement.style.setProperty('--afterdark-filter', finalFilter);
 
-    // Media Filter:
-    // When "Colourise media" is OFF (default): Media inverts the structural theme
-    // transform (invert + hue-rotate + contrast + brightness + theme hues) to render
-    // in natural colors. Singular rank-deficient projections (the grayscale and sepia
-    // sliders) are insulated from the media inverse calculation so the matrix determinant
-    // never collapses to zero, completely preventing images and videos from being altered,
-    // posterized, or flattened into sludge!
-    // When "Colourise media" is ON: Media only cancels the base invert flip, naturally
-    // inheriting the theme, warmth, and monochrome tone of the page without artifacts.
-    const baseFilter = 'invert(1) hue-rotate(180deg)';
-    const cleanMediaFilter = buildThemeFilter(themeKey, intensityFraction, 0, 0);
-    const mediaSourceFilter = getColorizeMedia() ? baseFilter : cleanMediaFilter;
-    updateMediaInverseFilter(invertTransformChain(chainTransform(mediaSourceFilter)));
+    // Compute media counter-filter in native CSS shorthand:
+    // This is 100% hardware accelerated across all browsers (Chrome, Safari, Firefox)
+    // and eliminates the Chrome GPU compositor bug where SVG reference filters
+    // (filter: url(#...)) are silently dropped on <video> elements, leaving them as photo negatives!
+    const cfg = THEME_CONFIGS[themeKey] || THEME_CONFIGS.standard;
+    const p = Math.max(0.01, intensityFraction);
+    const b_val = (cfg.brightness + (1.0 - p) * 0.20).toFixed(2);
+    const c_val = (cfg.contrast * (0.95 + 0.05 * p)).toFixed(2);
+    const h_val = cfg.hue;
+    const sat_val = (1.0 + (cfg.sat - 1.0) * p).toFixed(2);
+
+    let mediaFilter;
+    if (getColorizeMedia()) {
+      // Colourise media: only invert the base dark flip so media subtly picks up
+      // the theme, warmth, and grayscale like the rest of the page.
+      mediaFilter = 'invert(1) hue-rotate(180deg)';
+    } else {
+      // Keep media in natural colors: exact inverse of the base flip and theme adjustments.
+      const inv_b = (1.0 / parseFloat(b_val)).toFixed(3);
+      const inv_c = (1.0 / parseFloat(c_val)).toFixed(3);
+      const parts = [`brightness(${inv_b})`];
+      if (Math.abs(parseFloat(sat_val) - 1.0) > 0.01) {
+        const inv_sat = (1.0 / parseFloat(sat_val)).toFixed(3);
+        parts.push(`saturate(${inv_sat})`);
+      }
+      if (h_val !== 0) {
+        parts.push(`hue-rotate(${-h_val}deg)`);
+      }
+      parts.push(`contrast(${inv_c})`, 'hue-rotate(180deg)', 'invert(1)');
+      mediaFilter = parts.join(' ');
+    }
+    document.documentElement.style.setProperty('--afterdark-media-filter', mediaFilter);
 
     updateWidget();
   }

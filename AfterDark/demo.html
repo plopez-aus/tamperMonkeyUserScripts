@@ -20,10 +20,33 @@
 
   <div class="card">
     <h2>Sample card</h2>
-    <p>Some ordinary text, a link to <a href="#">nowhere</a>, and a sample image below to show
-       that images stay in their natural colors under the invert filter.</p>
+    <p>Some ordinary text, a link to <a href="#">nowhere</a>, and sample media below to show
+       that images, videos, and canvases stay in their natural colors under the invert filter.</p>
     <img src="https://picsum.photos/seed/afterdark/600/300" alt="sample" />
+    <div style="display:flex;gap:12px;margin-top:12px;">
+      <div>
+        <h4>Canvas (Red/Green/Blue)</h4>
+        <canvas id="test-canvas" width="200" height="120" style="border-radius:4px;"></canvas>
+      </div>
+      <div>
+        <h4>Video Element (Canvas Stream)</h4>
+        <video id="test-video" width="200" height="120" autoplay muted playsinline style="border-radius:4px;background:#333;"></video>
+      </div>
+    </div>
   </div>
+  <script>
+    const cvs = document.getElementById('test-canvas');
+    if (cvs) {
+      const ctx = cvs.getContext('2d');
+      ctx.fillStyle = '#ff3333'; ctx.fillRect(10, 10, 50, 100);
+      ctx.fillStyle = '#33cc33'; ctx.fillRect(70, 10, 50, 100);
+      ctx.fillStyle = '#3366ff'; ctx.fillRect(130, 10, 50, 100);
+      const vid = document.getElementById('test-video');
+      if (vid && cvs.captureStream) {
+        vid.srcObject = cvs.captureStream();
+      }
+    }
+  </script>
 
   <div class="filler">~1400px of filler content — scroll past this</div>
 
@@ -41,8 +64,12 @@
   // plain browser tab for local testing (Tampermonkey provides the real
   // versions of these when installed as a userscript).
   (function () {
+    const params = new URLSearchParams(window.location.search);
     window.GM_setValue = function (key, value) { localStorage.setItem('afterdark-demo:' + key, value); };
     window.GM_getValue = function (key, def) {
+      // Allow overriding settings via URL query parameters for rapid testing
+      const shortKey = key.replace('afterdark:', '');
+      if (params.has(shortKey)) return params.get(shortKey);
       const v = localStorage.getItem('afterdark-demo:' + key);
       return v === null ? def : v;
     };
