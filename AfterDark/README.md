@@ -9,9 +9,9 @@ A Tampermonkey userscript that darkens every site, similar to Dark Reader / Dark
 ## Install
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) in your browser.
-2. Open the Tampermonkey dashboard → **Utilities** (or **+**) → **Create a new script**.
-3. Delete the placeholder content and paste in the contents of [`afterdark.user.js`](afterdark.user.js).
-4. Save (`Ctrl/Cmd+S`). It runs on every site (`@match *://*/*`).
+2. Click **[Install AfterDark](https://raw.githubusercontent.com/plopez-aus/tamperMonkeyUserScripts/main/AfterDark/afterdark.user.js)** directly (Tampermonkey will open an installation prompt).
+   - *Manual alternative*: Open the Tampermonkey dashboard → **Utilities** (or **+**) → paste the contents of [`afterdark.user.js`](afterdark.user.js) → Save (`Ctrl/Cmd+S`).
+3. Updates will now be fetched automatically whenever new versions are pushed to `main`.
 
 ## Features
 

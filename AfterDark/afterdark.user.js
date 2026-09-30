@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AfterDark
 // @namespace    afterdark.local
-// @version      1.0.0
+// @version      1.0.1
 // @description  Dark mode for every site: global On/Off/Auto default with selectable theme, plus an independent per-site override with the same options.
 // @author       you
 // @match        *://*/*
@@ -10,6 +10,8 @@
 // @grant        GM_getValue
 // @grant        GM_addValueChangeListener
 // @grant        GM_registerMenuCommand
+// @updateURL    https://raw.githubusercontent.com/plopez-aus/tamperMonkeyUserScripts/main/AfterDark/afterdark.user.js
+// @downloadURL  https://raw.githubusercontent.com/plopez-aus/tamperMonkeyUserScripts/main/AfterDark/afterdark.user.js
 // ==/UserScript==
 
 (function () {
