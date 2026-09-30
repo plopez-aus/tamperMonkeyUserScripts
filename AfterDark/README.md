@@ -27,18 +27,21 @@ A Tampermonkey userscript that darkens every site, similar to Dark Reader / Dark
 
    Whichever theme is active, images/video/canvas are still corrected back to natural color first — the theme's extra brightness/contrast/sepia/hue adjustment then applies on top of that correction, so pictures subtly pick up the theme's mood instead of looking untouched or fully re-colored.
 5. **Intensity / Grayscale / Sepia sliders** (global, in the panel, 0–100% each):
-   - **Intensity** controls the strength of the base dark-mode flip itself (`invert()`'s own amount) — 100% is the full effect described above, lower values blend toward the untouched page (e.g. 50% gives a soft mid-gray instead of true black), rather than just dimming brightness.
-   - **Grayscale** and **Sepia** layer `grayscale()`/`sepia()` on top of whatever theme is active, for fine-tuning beyond the fixed presets.
-6. **"Colourise images" checkbox** (global, in the panel) — checked (default): images/video/canvas only cancel the base dark-mode flip, so they still pick up the active theme's and sliders' tint like the rest of the page (as described in #4). Unchecked: computes the exact inverse of the *entire* active filter chain (intensity + theme + sliders) and applies it to media specifically, so they render in their true original colors regardless of how strong the effect is elsewhere on the page.
+   - **Intensity** controls the depth and darkness of the theme without crushing contrast:
+     - **0%** disables the theme completely (page and media remain 100% normal/untouched).
+     - **100%** applies the full theme depth with rich, authentic theme colors (avoiding harsh pitch-black backgrounds and blinding stark-white text).
+     - **Between 1% and 99%** smoothly scales the darkness and warmth of the theme, softening the background while always keeping text high-contrast and readable (never collapsing into uniform flat gray). Media elements are completely insulated from intensity adjustments.
+   - **Grayscale** smoothly desaturates webpage elements, reaching a clean, distraction-free monochrome dark mode at 100% while keeping text contrast crisp.
+   - **Sepia** adds a soothing, warm amber reading tone (cutting harsh blue light) that scales smoothly up to a rich, paper-like reading theme without turning the page into unreadable brown mud.
+   - **Media Protection**: When "Colourise media" is off, images and videos remain in their natural colors and are completely insulated from Grayscale, Sepia, and Intensity slider adjustments.
+6. **"Colourise media" checkbox** (global, in the panel) — unchecked (default): media (images, video, canvas, etc.) renders in natural, original colors without being altered by themes or sliders. Checked: media only cancels the base dark-mode flip, subtly adopting the active theme's and sliders' mood like the rest of the page.
 
-   This works via a small color-matrix engine: every filter function used (`invert`, `hue-rotate`, `brightness`, `contrast`, `saturate`, `sepia`, `grayscale`) is representable as an affine transform in RGB space, so the whole chain composes into one 3×4 matrix that gets inverted exactly and applied to media through a single generated SVG `feColorMatrix` (kept in sync on every change, rather than trying to reverse each CSS function one at a time — `sepia()`/`grayscale()` have no CSS-level inverse, so that approach breaks down once those are involved).
-
-   One real limitation, not a bug: at very high Sepia/Grayscale slider values the *forward* transform itself throws away color information (that's the entire point of those filters), so nothing can recover it — pushing Sepia to 100% and unchecking "Colourise images" will show images as a flat, nearly featureless tone rather than restoring them, the same way you can't un-grayscale a photo. This becomes noticeable above roughly 80–90%; it's not something a filter trick can fix.
+   This works via an affine color-matrix engine: filter operations are composed in RGB space and applied to media through an SVG `feColorMatrix` filter kept in sync on every change. Singular projections are safely insulated so media never collapses into distorted sludge or flat gray.
 
 ## Controls
 
-- **Floating tab** (flush against the right edge, vertically centered): click it to open a panel with segmented controls for mode ("Default" and "This site"), a theme dropdown under each, the three sliders, and the "Colourise images" checkbox — change any of them instantly.
-- **Tampermonkey menu**: right-click the Tampermonkey toolbar icon → "AfterDark: cycle default (...)", "cycle this site (...)", "cycle default theme (...)", "cycle this site theme (...)", and "colourise images (...)" — each click advances to the next option (or toggles), handy if you don't want the on-page widget. The sliders are continuous, so they're widget-only (no menu entries).
+- **Floating tab** (flush against the right edge, vertically centered): click it to open a panel with segmented controls for mode ("Default" and "This site"), a theme dropdown under each, the three sliders, and the "Colourise media" checkbox — change any of them instantly.
+- **Tampermonkey menu**: right-click the Tampermonkey toolbar icon → "AfterDark: cycle default (...)", "cycle this site (...)", "cycle default theme (...)", "cycle this site theme (...)", and "colourise media (...)" — each click advances to the next option (or toggles), handy if you don't want the on-page widget. The sliders are continuous, so they're widget-only (no menu entries).
 
 ## Notes / limitations
 

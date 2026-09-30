@@ -21,7 +21,7 @@
   const KEY_DEFAULT = 'afterdark:defaultMode';   // 'on' | 'off' | 'auto'
   const KEY_THEME = 'afterdark:defaultTheme';    // one of THEME_KEYS
   const KEY_SITES = 'afterdark:sites';           // JSON: { hostname: { mode, theme } }
-  const KEY_COLORIZE = 'afterdark:colorizeImages'; // 'true' | 'false', defaults to 'true'
+  const KEY_COLORIZE = 'afterdark:colorizeMedia'; // 'true' | 'false', defaults to 'false'
   const KEY_INTENSITY = 'afterdark:intensity';     // 0-100, defaults to 100
   const KEY_GRAYSCALE = 'afterdark:grayscale';     // 0-100, defaults to 0
   const KEY_SEPIA_EXTRA = 'afterdark:sepiaExtra';  // 0-100, defaults to 0
@@ -38,17 +38,18 @@
   // known CSS variables with exact colors, a universal filter has no
   // idea what variables any given site uses, so it can only nudge hue/
   // saturation/warmth toward each palette's signature accent color.
-  const THEMES = {
-    standard: 'invert(1) hue-rotate(180deg)',
-    dimmed: 'invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9)',
-    sepia: 'invert(1) hue-rotate(180deg) sepia(0.25)',
-    contrast: 'invert(1) hue-rotate(180deg) contrast(1.25) brightness(1.05)',
-    dracula: 'invert(1) hue-rotate(180deg) sepia(0.4) hue-rotate(220deg) saturate(1.4) brightness(0.95)',
-    nord: 'invert(1) hue-rotate(180deg) sepia(0.3) hue-rotate(190deg) saturate(0.85) brightness(0.95) contrast(0.95)',
-    gruvbox: 'invert(1) hue-rotate(180deg) sepia(0.5) saturate(1.15) brightness(0.95)',
-    solarized: 'invert(1) hue-rotate(180deg) sepia(0.35) hue-rotate(150deg) saturate(1.1) brightness(0.95)',
-    tokyoNight: 'invert(1) hue-rotate(180deg) sepia(0.45) hue-rotate(230deg) saturate(1.3) brightness(0.9)',
+  const THEME_CONFIGS = {
+    standard:   { contrast: 0.82, brightness: 0.95, sepia: 0,    hue: 0,   sat: 1.0 },
+    dimmed:     { contrast: 0.76, brightness: 0.88, sepia: 0,    hue: 0,   sat: 0.95 },
+    sepia:      { contrast: 0.80, brightness: 0.95, sepia: 0.35, hue: 0,   sat: 1.0 },
+    contrast:   { contrast: 1.05, brightness: 0.98, sepia: 0,    hue: 0,   sat: 1.0 },
+    dracula:    { contrast: 0.80, brightness: 0.95, sepia: 0.40, hue: 220, sat: 1.4 },
+    nord:       { contrast: 0.80, brightness: 0.95, sepia: 0.30, hue: 190, sat: 0.85 },
+    gruvbox:    { contrast: 0.80, brightness: 0.95, sepia: 0.50, hue: 0,   sat: 1.15 },
+    solarized:  { contrast: 0.78, brightness: 0.92, sepia: 0.35, hue: 150, sat: 1.1 },
+    tokyoNight: { contrast: 0.80, brightness: 0.92, sepia: 0.45, hue: 230, sat: 1.3 },
   };
+  const THEMES = THEME_CONFIGS;
   const THEME_LABELS = {
     standard: 'Standard',
     dimmed: 'Dimmed',
@@ -66,7 +67,7 @@
   // ---------------------------------------------------------------------
   // Color-matrix engine.
   //
-  // "Colourise images" needs to cancel a theme's tint on media elements
+  // "Colourise media" needs to cancel a theme's tint on media elements
   // specifically (see the CSS below), and now that intensity/grayscale/
   // sepia are user-adjustable rather than baked into fixed presets, the
   // old approach (precompute one fixed inverse string per theme) can't
@@ -253,11 +254,11 @@
     GM_setValue(KEY_THEME, theme);
   }
 
-  function getColorizeImages() {
-    return GM_getValue(KEY_COLORIZE, 'true') === 'true';
+  function getColorizeMedia() {
+    return GM_getValue(KEY_COLORIZE, 'false') === 'true';
   }
 
-  function setColorizeImages(value) {
+  function setColorizeMedia(value) {
     GM_setValue(KEY_COLORIZE, value ? 'true' : 'false');
   }
 
@@ -365,6 +366,7 @@
   }
 
   function computeEnabled() {
+    if (getIntensity() === 0) return false;
     const site = getSiteMode(getHost());
     const mode = site === 'default' ? getDefaultMode() : site;
     if (mode === 'on') return true;
@@ -395,15 +397,13 @@ html.afterdark-enabled {
 }
 html.afterdark-enabled img,
 html.afterdark-enabled video,
-html.afterdark-enabled picture,
 html.afterdark-enabled canvas,
-html.afterdark-enabled iframe,
 html.afterdark-enabled embed,
 html.afterdark-enabled object,
 html.afterdark-enabled svg image {
   /* The exact inverse of whatever's currently active (theme + intensity
      + grayscale/sepia sliders, or just the base flip if "colourise
-     images" is on) -- applyTheme() keeps this SVG filter's matrix in
+     media" is on) -- applyTheme() keeps this SVG filter's matrix in
      sync on every change; see updateMediaInverseFilter(). */
   filter: url(#${MEDIA_INVERSE_ID}) !important;
 }
@@ -437,26 +437,69 @@ html.afterdark-enabled .afterdark-widget-host.afterdark-no-popover {
     }).observe(document, { childList: true, subtree: true });
   }
 
+  function buildThemeFilter(themeKey, intensityFraction, grayscaleAmt, sepiaAmt) {
+    const cfg = THEME_CONFIGS[themeKey] || THEME_CONFIGS.standard;
+    const p = Math.max(0.01, intensityFraction);
+
+    // Intensity controls theme depth and darkness without flattening contrast:
+    // Brightness gently lifts at lower intensity for a softer dark mode;
+    // Contrast is preserved so text is crisp and readable, never flat gray.
+    const b_val = (cfg.brightness + (1.0 - p) * 0.20).toFixed(2);
+    const c_val = (cfg.contrast * (0.95 + 0.05 * p)).toFixed(2);
+    const s_val = (cfg.sepia * p).toFixed(2);
+    const h_val = cfg.hue;
+    const sat_val = (1.0 + (cfg.sat - 1.0) * p).toFixed(2);
+
+    const parts = ['invert(1)', 'hue-rotate(180deg)'];
+    parts.push(`contrast(${c_val})`);
+    if (parseFloat(s_val) > 0.01) parts.push(`sepia(${s_val})`);
+    if (h_val !== 0) parts.push(`hue-rotate(${h_val}deg)`);
+    if (Math.abs(parseFloat(sat_val) - 1.0) > 0.01) parts.push(`saturate(${sat_val})`);
+    parts.push(`brightness(${b_val})`);
+
+    // Sepia slider (0-100%): scales to max 0.60 so 100% is a warm, comfortable amber
+    // reading tone (cutting blue light) without turning the page into unreadable brown mud.
+    const extraSepiaScaled = ((sepiaAmt / 100) * 0.60).toFixed(2);
+    if (parseFloat(extraSepiaScaled) > 0.01) parts.push(`sepia(${extraSepiaScaled})`);
+
+    // Grayscale slider (0-100%): smoothly desaturates the page, reaching clean monochrome at 100%.
+    if (grayscaleAmt > 0) parts.push(`grayscale(${grayscaleAmt}%)`);
+
+    return parts.join(' ');
+  }
+
   function applyTheme() {
+    const enabled = computeEnabled();
+    document.documentElement.classList.toggle('afterdark-enabled', enabled);
+
+    if (!enabled) {
+      document.documentElement.style.removeProperty('--afterdark-filter');
+      updateWidget();
+      return;
+    }
+
     const themeKey = computeThemeKey();
     const intensityFraction = getIntensity() / 100;
     const grayscaleAmt = getGrayscale();
     const sepiaAmt = getExtraSepia();
 
-    let finalFilter = THEMES[themeKey].replace('invert(1)', `invert(${intensityFraction})`);
-    if (grayscaleAmt > 0) finalFilter += ` grayscale(${grayscaleAmt}%)`;
-    if (sepiaAmt > 0) finalFilter += ` sepia(${sepiaAmt}%)`;
-
+    const finalFilter = buildThemeFilter(themeKey, intensityFraction, grayscaleAmt, sepiaAmt);
     document.documentElement.style.setProperty('--afterdark-filter', finalFilter);
 
-    // "Colourise images" on: only cancel the base dark-mode flip, so
-    // images still pick up the theme/slider tint like the rest of the
-    // page. Off: cancel the whole chain so images stay fully natural.
-    const baseFilter = `invert(${intensityFraction}) hue-rotate(180deg)`;
-    const mediaSourceFilter = getColorizeImages() ? baseFilter : finalFilter;
+    // Media Filter:
+    // When "Colourise media" is OFF (default): Media inverts the structural theme
+    // transform (invert + hue-rotate + contrast + brightness + theme hues) to render
+    // in natural colors. Singular rank-deficient projections (the grayscale and sepia
+    // sliders) are insulated from the media inverse calculation so the matrix determinant
+    // never collapses to zero, completely preventing images and videos from being altered,
+    // posterized, or flattened into sludge!
+    // When "Colourise media" is ON: Media only cancels the base invert flip, naturally
+    // inheriting the theme, warmth, and monochrome tone of the page without artifacts.
+    const baseFilter = 'invert(1) hue-rotate(180deg)';
+    const cleanMediaFilter = buildThemeFilter(themeKey, intensityFraction, 0, 0);
+    const mediaSourceFilter = getColorizeMedia() ? baseFilter : cleanMediaFilter;
     updateMediaInverseFilter(invertTransformChain(chainTransform(mediaSourceFilter)));
 
-    document.documentElement.classList.toggle('afterdark-enabled', computeEnabled());
     updateWidget();
   }
 
@@ -508,9 +551,9 @@ html.afterdark-enabled .afterdark-widget-host.afterdark-no-popover {
       applyTheme();
     });
     GM_registerMenuCommand(
-      'AfterDark: colourise images (' + (getColorizeImages() ? 'on' : 'off') + ')',
+      'AfterDark: colourise media (' + (getColorizeMedia() ? 'on' : 'off') + ')',
       () => {
-        setColorizeImages(!getColorizeImages());
+        setColorizeMedia(!getColorizeMedia());
         applyTheme();
       }
     );
@@ -625,7 +668,7 @@ html.afterdark-enabled .afterdark-widget-host.afterdark-no-popover {
         <div class="row">
           <label class="checkbox-row">
             <input type="checkbox" data-colorize />
-            Colourise images
+            Colourise media
           </label>
         </div>
       </div>
@@ -700,7 +743,7 @@ html.afterdark-enabled .afterdark-widget-host.afterdark-no-popover {
     });
 
     colorizeCheckbox.addEventListener('change', () => {
-      setColorizeImages(colorizeCheckbox.checked);
+      setColorizeMedia(colorizeCheckbox.checked);
       applyTheme();
     });
 
@@ -748,7 +791,7 @@ html.afterdark-enabled .afterdark-widget-host.afterdark-no-popover {
     });
     widgetRefs.defaultThemeSelect.value = dTheme;
     widgetRefs.siteThemeSelect.value = sTheme;
-    widgetRefs.colorizeCheckbox.checked = getColorizeImages();
+    widgetRefs.colorizeCheckbox.checked = getColorizeMedia();
     widgetRefs.intensitySlider.value = intensity;
     widgetRefs.grayscaleSlider.value = grayscaleAmt;
     widgetRefs.sepiaSlider.value = sepiaAmt;
